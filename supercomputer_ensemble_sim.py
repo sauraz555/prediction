@@ -23,7 +23,7 @@ import os
 import random
 import time
 
-from draw_machine import describe, load_config, simulate_drum
+from draw_machine import ball_set_masses, describe, load_config, simulate_drum
 
 # Combinations already generated in the previous run (excluded from new output)
 PREVIOUS_COMBOS = {
@@ -42,8 +42,12 @@ def simulate_universe(args):
     """One full draw: 7 main balls from 35, and 1 Powerball from 20 (separate drum)."""
     _universe_id, cfg = args
     rng = random.Random(os.urandom(16))  # independent OS-entropy seed per universe
-    main = simulate_drum(cfg, rng, cfg.main_balls, cfg.main_draws)
-    pb = simulate_drum(cfg, rng, cfg.powerball_balls, cfg.powerball_draws)[0]
+    # Ball sets are rotated from storage: each draw uses a randomly chosen set,
+    # whose balls carry small (within-tolerance) weight differences.
+    main_set = ball_set_masses(cfg, cfg.main_balls, rng.randrange(cfg.ball_sets))
+    pb_set = ball_set_masses(cfg, cfg.powerball_balls, rng.randrange(cfg.ball_sets))
+    main = simulate_drum(cfg, rng, cfg.main_balls, cfg.main_draws, masses=main_set)
+    pb = simulate_drum(cfg, rng, cfg.powerball_balls, cfg.powerball_draws, masses=pb_set)[0]
     return tuple(sorted(main)), pb
 
 

@@ -19,6 +19,7 @@ parameters, a real draw is chaotic and cannot be predicted by this model.
 """
 import json
 import math
+import random
 from dataclasses import asdict, dataclass, fields
 
 import pymunk
@@ -45,6 +46,11 @@ PROVENANCE = {
     "ball_mass_g":              ("ASSUMED", "not published; The Lott only says each ball is weighed "
                                             "to 0.001 g by NMI [thelott_balls]. ~10 g estimated "
                                             "from 50 mm polymer foam (~0.15 g/cm^3)"),
+    "ball_mass_tolerance_g":    ("ASSUMED", "max +/- weight deviation of a ball from nominal; certification "
+                                            "allows 'a few hundredths of a gram' (user research), balls "
+                                            "weighed to 0.001 g by NMI [thelott_balls]"),
+    "ball_sets":                ("ASSUMED", "number of certified ball sets rotated from secure storage; "
+                                            "rotation is reported, the count is not published"),
     "ball_elasticity":          ("ASSUMED", "polymer foam restitution estimate"),
     "ball_friction":            ("ASSUMED", "foam-on-foam / foam-on-acrylic estimate"),
     "chamber_diameter_mm":      ("ASSUMED", "not published; ~600 mm rough guess, replace with a measured value"),
@@ -72,6 +78,8 @@ class MachineConfig:
     # Balls
     ball_diameter_mm: float = 50.0
     ball_mass_g: float = 10.0
+    ball_mass_tolerance_g: float = 0.03
+    ball_sets: int = 4
     ball_elasticity: float = 0.80
     ball_friction: float = 0.40
     # Chamber (container)
@@ -126,7 +134,18 @@ def load_config(path=None):
     cfg = MachineConfig(**overrides)
     if cfg.mix_type not in ("gravity", "air"):
         raise ValueError("mix_type must be 'gravity' or 'air'")
+    if cfg.ball_sets < 1:
+        raise ValueError("ball_sets must be at least 1")
     return cfg
+
+
+def ball_set_masses(cfg, num_balls, set_id, tolerance_g=None):
+    """Per-ball masses (g) of one certified ball set. Each ball deviates from
+    nominal by up to +/- tolerance. Deterministic per (barrel size, set_id), so a
+    set keeps its weights across draws, as a physical set would."""
+    tol = cfg.ball_mass_tolerance_g if tolerance_g is None else tolerance_g
+    rng = random.Random(f"ballset-{num_balls}-{set_id}")
+    return [cfg.ball_mass_g + rng.uniform(-tol, tol) for _ in range(num_balls)]
 
 
 def describe(cfg):
@@ -192,17 +211,21 @@ def loading_positions(cfg, num_balls):
     return pts[:num_balls]
 
 
-def load_balls(space, cfg, num_balls, rng, jitter=1e-4, perturb_ball=None, perturb=0.0):
-    """Add numbered balls with microscopic random offsets (initial-condition noise)."""
+def load_balls(space, cfg, num_balls, rng, jitter=1e-4, perturb_ball=None, perturb=0.0,
+               masses=None):
+    """Add numbered balls with microscopic random offsets (initial-condition noise).
+    `masses` gives each ball's weight in g (default: all nominal)."""
     r = cfg.ball_radius_mm
-    inertia = pymunk.moment_for_circle(cfg.ball_mass_g, 0, r, (0, 0))
+    if masses is None:
+        masses = [cfg.ball_mass_g] * num_balls
     balls = []
     for number, (x, y) in enumerate(loading_positions(cfg, num_balls), start=1):
+        mass = masses[number - 1]
         x += rng.uniform(-jitter, jitter)
         y += rng.uniform(-jitter, jitter)
         if number == perturb_ball:
             x += perturb
-        body = pymunk.Body(cfg.ball_mass_g, inertia)
+        body = pymunk.Body(mass, pymunk.moment_for_circle(mass, 0, r, (0, 0)))
         body.position = (x, y)
         shape = pymunk.Circle(body, r)
         shape.elasticity = cfg.ball_elasticity
@@ -253,7 +276,7 @@ def run_draw(space, balls, cfg, num_draws, on_step=None):
     return drawn
 
 
-def simulate_drum(cfg, rng, num_balls, num_draws):
+def simulate_drum(cfg, rng, num_balls, num_draws, masses=None):
     space = new_space(cfg)
-    balls = load_balls(space, cfg, num_balls, rng)
+    balls = load_balls(space, cfg, num_balls, rng, masses=masses)
     return run_draw(space, balls, cfg, num_draws)
