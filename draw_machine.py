@@ -19,6 +19,8 @@ parameters, a real draw is chaotic and cannot be predicted by this model.
 """
 import json
 import math
+import multiprocessing
+import os
 import random
 from dataclasses import asdict, dataclass, fields
 
@@ -280,3 +282,21 @@ def simulate_drum(cfg, rng, num_balls, num_draws, masses=None):
     space = new_space(cfg)
     balls = load_balls(space, cfg, num_balls, rng, masses=masses)
     return run_draw(space, balls, cfg, num_draws)
+
+
+# --- Parallel runs -----------------------------------------------------------
+
+def _lower_priority():
+    """Run simulation workers at the lowest CPU priority so other users' jobs
+    on a shared machine (e.g. a DGX) are served first."""
+    try:
+        os.nice(19)
+    except (AttributeError, OSError):
+        pass  # not supported on this platform
+
+
+def make_pool(workers=None):
+    """Process pool of `workers` low-priority processes (default: all cores)."""
+    cores = multiprocessing.cpu_count()
+    workers = cores if workers is None else max(1, min(workers, cores))
+    return multiprocessing.Pool(processes=workers, initializer=_lower_priority), workers

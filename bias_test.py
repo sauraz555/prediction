@@ -17,6 +17,7 @@ Two sets are tested:
 Usage:
     python bias_test.py                        # 400 dry-run draws per set
     python bias_test.py --draws 1000 --machine-config my_machine.json
+    python bias_test.py --workers 8            # limit CPU cores used
 """
 import argparse
 import multiprocessing
@@ -25,7 +26,7 @@ import random
 import time
 from collections import Counter
 
-from draw_machine import ball_set_masses, load_config, simulate_drum
+from draw_machine import ball_set_masses, load_config, make_pool, simulate_drum
 
 CHI2_CRIT_34DF_5PCT = 48.60  # chi-square critical value, 34 degrees of freedom, p = 0.05
 
@@ -77,13 +78,15 @@ def main():
     parser.add_argument("--draws", type=int, default=400, help="dry-run draws per ball set")
     parser.add_argument("--exaggerated", type=float, default=3.0,
                         help="weight tolerance (g) for the faulty positive-control set")
+    parser.add_argument("--workers", type=int, help="CPU cores to use (default: all)")
     parser.add_argument("--machine-config", help="JSON file overriding machine parameters")
     args = parser.parse_args()
     cfg = load_config(args.machine_config)
 
-    print(f"Dry-run bias test on {multiprocessing.cpu_count()} cores "
+    pool, workers = make_pool(args.workers)
+    print(f"Dry-run bias test on {workers} of {multiprocessing.cpu_count()} cores, low priority "
           f"({cfg.mix_type} mix, {cfg.main_balls} balls, {cfg.main_draws} drawn per draw)")
-    with multiprocessing.Pool() as pool:
+    with pool:
         test_set(cfg, "CERTIFIED SET", cfg.ball_mass_tolerance_g, args.draws, pool)
         test_set(cfg, "EXAGGERATED (FAULTY) SET", args.exaggerated, args.draws, pool)
 

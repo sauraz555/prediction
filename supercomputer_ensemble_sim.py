@@ -16,6 +16,7 @@ Usage:
     python supercomputer_ensemble_sim.py                # 24 combinations
     python supercomputer_ensemble_sim.py --count 40     # 40 combinations
     python supercomputer_ensemble_sim.py --machine-config my_machine.json
+    python supercomputer_ensemble_sim.py --workers 8    # limit CPU cores used
 """
 import argparse
 import multiprocessing
@@ -23,7 +24,7 @@ import os
 import random
 import time
 
-from draw_machine import ball_set_masses, describe, load_config, simulate_drum
+from draw_machine import ball_set_masses, describe, load_config, make_pool, simulate_drum
 
 # Combinations already generated in the previous run (excluded from new output)
 PREVIOUS_COMBOS = {
@@ -51,18 +52,19 @@ def simulate_universe(args):
     return tuple(sorted(main)), pb
 
 
-def run_ensemble(count, cfg):
+def run_ensemble(count, cfg, workers=None):
     print("Draw machine parameters (VERIFIED = published source, ASSUMED = placeholder):")
     print(describe(cfg))
     print(f"\nSimulated machine time per draw: {cfg.simulated_seconds():.0f} s "
           f"({cfg.mix_type} mix)\n")
-    cores = multiprocessing.cpu_count()
-    print(f"Running ensemble on {cores} CPU cores, target: {count} new combinations...")
+    pool, workers = make_pool(workers)
+    print(f"Running ensemble on {workers} of {multiprocessing.cpu_count()} CPU cores "
+          f"(low priority), target: {count} new combinations...")
     start = time.time()
 
     results = []
     seen = set(PREVIOUS_COMBOS)
-    with multiprocessing.Pool(processes=cores) as pool:
+    with pool:
         while len(results) < count:
             batch = pool.map(simulate_universe,
                              [(i, cfg) for i in range(count - len(results))])
@@ -82,7 +84,8 @@ def run_ensemble(count, cfg):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--count", type=int, default=24, help="number of combinations")
+    parser.add_argument("--workers", type=int, help="CPU cores to use (default: all)")
     parser.add_argument("--machine-config", help="JSON file overriding draw machine "
                         "parameters (see draw_machine.py)")
     args = parser.parse_args()
-    run_ensemble(args.count, load_config(args.machine_config))
+    run_ensemble(args.count, load_config(args.machine_config), args.workers)

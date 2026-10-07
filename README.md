@@ -80,3 +80,17 @@ Set `"mix_type": "air"` to swap the paddle arms for a blower jet if an air-mix m
 Note: the model is a 2D cross-section of a 3D sphere. Even a perfectly calibrated model cannot predict
 a chaotic physical draw (see Test 3 in `verify_simulation.py`); every combination has the same
 1 in 134,490,400 chance.
+
+### Running on a shared machine (e.g. DGX)
+
+The simulations are CPU-only (pymunk); GPUs are not used. By default they use every core, at the
+lowest CPU priority (`nice 19`), so other jobs are served first. Limit the cores with `--workers`:
+
+```bash
+python supercomputer_ensemble_sim.py --count 40 --workers 8
+python bias_test.py --draws 400 --workers 8
+```
+
+`bias_test.py` emulates pre-draw certification dry runs: it checks a ball set with in-tolerance weight
+differences (default +/- 0.03 g) for uniformity and weight bias, alongside a deliberately faulty
++/- 3 g set as a positive control.
