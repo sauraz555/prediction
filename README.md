@@ -9,6 +9,35 @@ This project provides a comprehensive data analysis, simulation, and machine lea
 3. **`module3_monte_carlo.py`**: Simulates 10 million Powerball draws to empirically verify theoretical prize odds.
 4. **`module4_expected_value.py`**: Calculates the mathematical Expected Value (EV) of a ticket, taking into account lump-sum options and the probability of splitting the jackpot (using the Poisson distribution).
 
+## Top Predictions Pipeline (`top_predictions.py`) — recommended
+
+Australian Powerball format: 7 from 35 + Powerball 1 from 20 (draw #1144 onwards).
+
+No model can make a combination more likely to be drawn; every ticket is 1 in 134,490,400.
+This pipeline optimises the things that *can* be optimised:
+
+| Step | What it does | Why it helps |
+|---|---|---|
+| Bias test | Chi-square on per-ball counts, Monte Carlo p-value, James-Stein shrinkage toward uniform | Uses a ball bias only if the data shows one; otherwise the bias weight is ~0 |
+| Anti-popularity | Penalises birthdays (≤31, ≤12), sequences, progressions, last draw's numbers, "hot" numbers, multiples of 7 | Fewer people share your jackpot or division if you win |
+| Exact scoring | Enumerates and scores all 6,724,520 main combinations | No sampling noise |
+| Coverage | Greedy ticket set with `--max-overlap` and balanced number usage, plus all 20 Powerballs spread across tickets | Better chance that at least one ticket wins some prize |
+| Walk-forward backtest | Re-fits on past draws only and compares hits with the exact odds (z-scores) | Shows whether the model beats chance (it should not) |
+
+### Running on DGX Spark
+
+```bash
+pip install -r requirements.txt
+python extract_powerball.py                 # refresh results first
+python top_predictions.py --tickets 20      # top 20 tickets -> top_predictions_draw_<N>.csv
+python top_predictions.py --tickets 50 --max-overlap 2 --mc-reps 100000
+python top_predictions.py --tickets 20 --backtest 300 --workers 20   # uses all cores
+```
+
+The first run builds `combos_7of35.npy` (~47 MB) and reuses it after that. Memory use is roughly 1–2 GB per backtest worker.
+
+The old `predict_this_week.py` trained on a CSV that mixed the 5/45, 6/40 and 7/35 formats. It now filters to the 7/35 format.
+
 ## Environment Setup
 
 To run these scripts, you will need Python 3.8+ and several data science libraries.
