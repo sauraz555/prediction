@@ -5,23 +5,25 @@ Each "universe" is an independent 2D rigid-body simulation with microscopic
 perturbations to the initial ball positions. Both the main draw (7 from 35) and
 the Powerball (1 from 20) are drawn from simulated drums.
 
-NOTE: This is a simplified 2D model with assumed parameters (drum size, paddle
-speed, elasticity). It is NOT calibrated to the real Smartplay Halogen II, and
-its outputs have no predictive power for real draws. Every combination it
-produces is as likely (1 in 134,490,400) as any other.
+Physical parameters (ball size, chamber size, paddle speed, draw timing, ...)
+come from draw_machine.py, where each is marked VERIFIED or ASSUMED.
+
+NOTE: This is a simplified 2D model and several parameters are assumed. Even a
+perfectly calibrated model has no predictive power for real draws. Every
+combination it produces is as likely (1 in 134,490,400) as any other.
 
 Usage:
     python supercomputer_ensemble_sim.py                # 24 combinations
     python supercomputer_ensemble_sim.py --count 40     # 40 combinations
+    python supercomputer_ensemble_sim.py --machine-config my_machine.json
 """
 import argparse
-import math
 import multiprocessing
 import os
 import random
 import time
 
-import pymunk
+from draw_machine import describe, load_config, simulate_drum
 
 # Combinations already generated in the previous run (excluded from new output)
 PREVIOUS_COMBOS = {
@@ -35,87 +37,21 @@ PREVIOUS_COMBOS = {
     (6, 10, 16, 22, 26, 28, 35), (4, 10, 24, 29, 30, 34, 35),
 }
 
-CHAMBER_RADIUS = 300
-CENTER = (400, 400)
-BALL_RADIUS = 25
-BALL_MASS = 50.0
-DT = 1.0 / 1000.0  # 1 ms physics step
 
-
-def build_drum(space):
-    """Static circular chamber plus two counter-rotating mixing paddles."""
-    body = pymunk.Body(body_type=pymunk.Body.STATIC)
-    body.position = CENTER
-    segments = []
-    n = 100
-    for i in range(n):
-        a1 = (i / n) * 2 * math.pi
-        a2 = ((i + 1) / n) * 2 * math.pi
-        p1 = (CHAMBER_RADIUS * math.cos(a1), CHAMBER_RADIUS * math.sin(a1))
-        p2 = (CHAMBER_RADIUS * math.cos(a2), CHAMBER_RADIUS * math.sin(a2))
-        seg = pymunk.Segment(body, p1, p2, 5)
-        seg.elasticity = 0.9
-        seg.friction = 0.1
-        segments.append(seg)
-    space.add(body, *segments)
-
-    for dx, omega in ((-50, 8.0), (50, -8.0)):
-        paddle = pymunk.Body(body_type=pymunk.Body.KINEMATIC)
-        paddle.position = (CENTER[0] + dx, CENTER[1] + 150)
-        paddle.angular_velocity = omega
-        shape = pymunk.Segment(paddle, (-80, 0), (80, 0), 10)
-        shape.elasticity = 1.0
-        shape.friction = 0.5
-        space.add(paddle, shape)
-
-
-def simulate_drum(rng, num_balls, num_draws, mix_steps=3000, between_steps=500):
-    """Simulate one drum: load balls with micro-noise, mix, then draw sequentially."""
-    space = pymunk.Space()
-    space.gravity = (0, 981)
-    build_drum(space)
-
-    inertia = pymunk.moment_for_circle(BALL_MASS, 0, BALL_RADIUS, (0, 0))
-    balls = []
-    for number in range(1, num_balls + 1):
-        idx = number - 1
-        row, col = divmod(idx, 6)
-        base_x = CENTER[0] - 150 + col * 60
-        base_y = CENTER[1] - 200 + row * 60
-        body = pymunk.Body(BALL_MASS, inertia)
-        # Microscopic perturbation (1e-4 units) -> divergence via chaos
-        body.position = (base_x + rng.uniform(-1e-4, 1e-4),
-                         base_y + rng.uniform(-1e-4, 1e-4))
-        shape = pymunk.Circle(body, BALL_RADIUS)
-        shape.elasticity = 0.95
-        shape.friction = 0.2
-        space.add(body, shape)
-        balls.append((body, shape, number))
-
-    for _ in range(mix_steps):
-        space.step(DT)
-
-    drawn = []
-    for _ in range(num_draws):
-        for _ in range(between_steps):
-            space.step(DT)
-        # "Gate" at the bottom: capture the lowest ball (largest y)
-        lowest = max(balls, key=lambda b: b[0].position.y)
-        drawn.append(lowest[2])
-        space.remove(lowest[0], lowest[1])
-        balls.remove(lowest)
-    return drawn
-
-
-def simulate_universe(_universe_id):
+def simulate_universe(args):
     """One full draw: 7 main balls from 35, and 1 Powerball from 20 (separate drum)."""
+    _universe_id, cfg = args
     rng = random.Random(os.urandom(16))  # independent OS-entropy seed per universe
-    main = simulate_drum(rng, num_balls=35, num_draws=7)
-    pb = simulate_drum(rng, num_balls=20, num_draws=1)[0]
+    main = simulate_drum(cfg, rng, cfg.main_balls, cfg.main_draws)
+    pb = simulate_drum(cfg, rng, cfg.powerball_balls, cfg.powerball_draws)[0]
     return tuple(sorted(main)), pb
 
 
-def run_ensemble(count):
+def run_ensemble(count, cfg):
+    print("Draw machine parameters (VERIFIED = published source, ASSUMED = placeholder):")
+    print(describe(cfg))
+    print(f"\nSimulated machine time per draw: {cfg.simulated_seconds():.0f} s "
+          f"({cfg.mix_type} mix)\n")
     cores = multiprocessing.cpu_count()
     print(f"Running ensemble on {cores} CPU cores, target: {count} new combinations...")
     start = time.time()
@@ -124,7 +60,8 @@ def run_ensemble(count):
     seen = set(PREVIOUS_COMBOS)
     with multiprocessing.Pool(processes=cores) as pool:
         while len(results) < count:
-            batch = pool.map(simulate_universe, range(count - len(results)))
+            batch = pool.map(simulate_universe,
+                             [(i, cfg) for i in range(count - len(results))])
             for combo, pb in batch:
                 if combo not in seen:
                     seen.add(combo)
@@ -141,5 +78,7 @@ def run_ensemble(count):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--count", type=int, default=24, help="number of combinations")
+    parser.add_argument("--machine-config", help="JSON file overriding draw machine "
+                        "parameters (see draw_machine.py)")
     args = parser.parse_args()
-    run_ensemble(args.count)
+    run_ensemble(args.count, load_config(args.machine_config))

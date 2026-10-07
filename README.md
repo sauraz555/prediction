@@ -40,3 +40,43 @@ Machine Learning algorithms are exceptional at finding hidden patterns, correlat
 When you feed i.i.d. random noise into a complex model like an LSTM or a Markov Chain, the model attempts to minimize loss by mapping noise to noise. It will either overfit to historical variance (finding "patterns" that are purely coincidental) or, with heavy regularization, it will mathematically converge back to predicting the uniform distribution—exactly matching the performance of a naive random guess. 
 
 Therefore, any statistically significant deviation from random baseline performance in a lottery prediction model indicates either a flaw in the lottery's physical randomness (which is highly audited) or a bug in the model's evaluation logic (such as data leakage).
+
+---
+
+## Draw Machine Physics Model (`draw_machine.py`)
+
+The physics simulations (`supercomputer_ensemble_sim.py`, `verify_simulation.py`) share one
+machine model in real units (mm, g, s). Run `python supercomputer_ensemble_sim.py` to print the
+full parameter table. Each parameter is marked:
+
+| Status | Parameters |
+|---|---|
+| **VERIFIED** | 35-ball main barrel (7 drawn), 20-ball Powerball barrel (1 drawn); 50 mm foam balls; two Smartplay Halogen II machines (since April 2018); gravity mix (paddle arms) |
+| **ASSUMED** (no public figure found) | ball mass (10 g), chamber diameter (600 mm), paddle speed (75 rpm) and length, ball/wall elasticity and friction, mix time before first ball (20 s), interval between balls (6 s) |
+
+To plug in your own researched values, create a JSON file with any subset of fields:
+
+```json
+{"chamber_diameter_mm": 580, "initial_mix_s": 25, "interval_between_balls_s": 9.5}
+```
+
+```bash
+python supercomputer_ensemble_sim.py --machine-config my_machine.json
+python verify_simulation.py my_machine.json
+```
+
+Set `"mix_type": "air"` to swap the paddle arms for a blower jet if an air-mix machine is confirmed.
+
+### Matrix history (why only post-2018 data is used for the current game)
+
+| Period | Main barrel | Powerball barrel |
+|---|---|---|
+| 1996 – 2013 | 5 from 45 | 1 from 45 |
+| 2013 – Apr 2018 | 6 from 40 | 1 from 20 |
+| Apr 2018 – present | 7 from 35 | 1 from 20 |
+
+`predict_this_week.py` trains only on 7/35 + 1/20 draws.
+
+Note: the model is a 2D cross-section of a 3D sphere. Even a perfectly calibrated model cannot predict
+a chaotic physical draw (see Test 3 in `verify_simulation.py`); every combination has the same
+1 in 134,490,400 chance.

@@ -51,12 +51,17 @@ if __name__ == "__main__":
         try:
             wbs = [int(x.strip()) for x in row['Winning Numbers'].split(',')]
             pb = int(row['Powerball'])
+            # Only the current matrix (7 from 35 + 1 from 20, since 19 April 2018).
+            # Earlier draws used 5/45 + 1/45 (1996-2013) and 6/40 + 1/20 (2013-2018).
+            if len(wbs) != 7 or max(wbs) > 35 or pb > 20:
+                continue
             historical_wbs.append(wbs)
             historical_pbs.append(pb)
         except Exception as e:
             continue
             
-    print(f"Successfully parsed {len(historical_wbs)} historical draws.")
+    print(f"Using {len(historical_wbs)} draws from the current 7/35 + 1/20 matrix "
+          f"(older 5/45 and 6/40 draws excluded).")
     
     latest_draw_wbs = historical_wbs[-1]
     latest_draw_pb = historical_pbs[-1]
@@ -65,8 +70,8 @@ if __name__ == "__main__":
     print(f"White Balls: {latest_draw_wbs}")
     print(f"Powerball: {latest_draw_pb}")
     
-    print("\nTraining Markov Chain Model on 15 years of data...")
-    markov = MarkovChainModel(max_white_ball=50)
+    print("\nTraining Markov Chain Model on current-matrix draws...")
+    markov = MarkovChainModel(max_white_ball=35)
     markov.fit(historical_wbs)
     
     print("Predicting the numbers for THIS WEEK based on the Markov Chain transitions...")
