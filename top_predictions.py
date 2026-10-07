@@ -116,7 +116,13 @@ def combo_masks(combos):
 
 
 def popcount(x):
-    return np.bitwise_count(x).astype(np.int8)
+    if hasattr(np, "bitwise_count"):  # numpy >= 2.0
+        return np.bitwise_count(x).astype(np.int8)
+    x = np.asarray(x, dtype=np.uint64)  # SWAR fallback for numpy 1.x
+    x = x - ((x >> np.uint64(1)) & np.uint64(0x5555555555555555))
+    x = (x & np.uint64(0x3333333333333333)) + ((x >> np.uint64(2)) & np.uint64(0x3333333333333333))
+    x = (x + (x >> np.uint64(4))) & np.uint64(0x0F0F0F0F0F0F0F0F)
+    return ((x * np.uint64(0x0101010101010101)) >> np.uint64(56)).astype(np.int8)
 
 
 # --------------------------------------------------------------------------- bias
@@ -258,7 +264,7 @@ def count_divisions(tickets, pbs, draw, draw_pb):
     dm = to_mask(draw)
     hits = np.zeros(len(DIVISIONS), dtype=int)
     for t, p in zip(tickets, pbs):
-        m = int(np.bitwise_count(to_mask(t) & dm))
+        m = int(popcount(to_mask(t) & dm))
         key = (m, p == draw_pb)
         if key in DIVISIONS:
             hits[DIVISIONS.index(key)] += 1
