@@ -51,6 +51,10 @@ if __name__ == "__main__":
         try:
             wbs = [int(x.strip()) for x in row['Winning Numbers'].split(',')]
             pb = int(row['Powerball'])
+            # Only the current 7/35 + PB 20 format (draw 1144 onwards); older
+            # 5/45 and 6/40 draws would corrupt the transition matrix.
+            if row['Draw Number'] < 1144 or len(wbs) != 7 or max(wbs) > 35 or pb > 20:
+                continue
             historical_wbs.append(wbs)
             historical_pbs.append(pb)
         except Exception as e:
@@ -66,7 +70,7 @@ if __name__ == "__main__":
     print(f"Powerball: {latest_draw_pb}")
     
     print("\nTraining Markov Chain Model on 15 years of data...")
-    markov = MarkovChainModel(max_white_ball=50)
+    markov = MarkovChainModel(max_white_ball=35)
     markov.fit(historical_wbs)
     
     print("Predicting the numbers for THIS WEEK based on the Markov Chain transitions...")

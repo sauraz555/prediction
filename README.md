@@ -9,6 +9,56 @@ This project provides a comprehensive data analysis, simulation, and machine lea
 3. **`module3_monte_carlo.py`**: Simulates 10 million Powerball draws to empirically verify theoretical prize odds.
 4. **`module4_expected_value.py`**: Calculates the mathematical Expected Value (EV) of a ticket, taking into account lump-sum options and the probability of splitting the jackpot (using the Poisson distribution).
 
+## Top Predictions Pipeline (`top_predictions.py`) — recommended
+
+Australian Powerball format: 7 from 35 + Powerball 1 from 20 (draw #1144 onwards).
+
+No model can make a combination more likely to be drawn; every ticket is 1 in 134,490,400.
+This pipeline optimises the things that *can* be optimised:
+
+| Step | What it does | Why it helps |
+|---|---|---|
+| Bias test | Chi-square on per-ball counts, Monte Carlo p-value, James-Stein shrinkage toward uniform | Uses a ball bias only if the data shows one; otherwise the bias weight is ~0 |
+| Anti-popularity | Penalises birthdays (≤31, ≤12), sequences, progressions, last draw's numbers, "hot" numbers, multiples of 7 | Fewer people share your jackpot or division if you win |
+| Exact scoring | Enumerates and scores all 6,724,520 main combinations | No sampling noise |
+| Coverage | Greedy ticket set with `--max-overlap` and balanced number usage, plus all 20 Powerballs spread across tickets | Better chance that at least one ticket wins some prize |
+| Walk-forward backtest | Re-fits on past draws only and compares hits with the exact odds (z-scores) | Shows whether the model beats chance (it should not) |
+
+### Running on DGX Spark
+
+```bash
+pip install -r requirements.txt
+python extract_powerball.py                 # refresh results first
+python top_predictions.py --tickets 20      # top 20 tickets -> top_predictions_draw_<N>.csv
+python top_predictions.py --tickets 50 --max-overlap 2 --mc-reps 100000
+python top_predictions.py --tickets 20 --backtest 300 --workers 20   # uses all cores
+```
+
+### Heavy model search (`deep_ensemble.py`) — uses the GPU and all cores
+
+Searches six model families on the full draw history: decayed frequency, Markov transitions, logistic regression, gradient-boosted trees, and GRU and Transformer deep ensembles. Every model is scored walk-forward; no prediction ever sees its own draw.
+
+- **Validation** draws are used to pick the best configs per family and to fit stacking weights.
+- **Holdout** draws (the last 100) are never used for any choice and give the honest score: log-likelihood gain over chance, in nats per draw.
+- **`--null-runs N`** re-runs the whole search on N synthetic fair-draw datasets. This gives the right p-value after trying hundreds of models, and it is where most of the compute goes.
+- The model's probabilities are only written if the holdout gain is positive and significant. Otherwise uniform is written (override with `--force-model`).
+
+```bash
+# On DGX Spark, inside the NGC PyTorch container:
+docker run --gpus all -it --rm -v $PWD:/work -w /work nvcr.io/nvidia/pytorch:25.09-py3 bash
+pip install pandas scikit-learn
+
+python deep_ensemble.py --quick                                   # smoke test first
+python deep_ensemble.py --configs 64 --seeds 8 --null-runs 20 --gpu-workers 6
+python top_predictions.py --probs model_probs_draw_1585.json --tickets 20
+```
+
+Main knobs: `--configs` (random configs per searched family), `--seeds` (members per neural config), `--refit` (retrain every N draws; lower costs more), `--null-runs`, `--gpu-workers` and `--cpu-workers`. Without null runs a full search should take tens of minutes; each null run costs about as much again. Outputs are `model_probs_draw_<N>.json` (input for `top_predictions.py`) and `ensemble_report_draw_<N>.json` (all scores, weights and timings).
+
+The first run builds `combos_7of35.npy` (~47 MB) and reuses it after that. Memory use is roughly 1–2 GB per backtest worker.
+
+The old `predict_this_week.py` trained on a CSV that mixed the 5/45, 6/40 and 7/35 formats. It now filters to the 7/35 format.
+
 ## Environment Setup
 
 To run these scripts, you will need Python 3.8+ and several data science libraries.

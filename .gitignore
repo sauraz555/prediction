@@ -1,0 +1,8 @@
+/combos_7of35.npy
+/top_predictions_draw_*.csv
+/model_probs_draw_*.json
+/ensemble_report_draw_*.json
+/logs/
+/logs_quick.txt
+nohup.out
+__pycache__/

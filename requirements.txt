@@ -1,0 +1,9 @@
+numpy
+pandas
+scikit-learn
+requests
+beautifulsoup4
+pymunk
+# torch with CUDA: on DGX Spark use the NVIDIA NGC PyTorch container
+# (nvcr.io/nvidia/pytorch) or a CUDA-enabled aarch64 wheel.
+torch
