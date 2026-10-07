@@ -29,6 +29,7 @@ Usage:
 """
 import argparse
 import itertools
+import json
 import math
 import multiprocessing
 import os
@@ -320,6 +321,8 @@ def main():
     ap.add_argument("--workers", type=int, default=multiprocessing.cpu_count())
     ap.add_argument("--seed", type=int, default=None)
     ap.add_argument("--out", default=None, help="CSV output path")
+    ap.add_argument("--probs", default=None,
+                    help="model_probs_draw_N.json from deep_ensemble.py (replaces the bias model)")
     args = ap.parse_args()
 
     draw_no, dates, main_d, pb_d = load_draws(args.data)
@@ -345,6 +348,20 @@ def main():
     print("Max per-ball edge after shrinkage: main "
           f"{(bias['w'].max() * N_MAIN - 1) * 100:+.2f}%, "
           f"PB {(bias['v'].max() * N_PB - 1) * 100:+.2f}% vs. uniform")
+
+    if args.probs:
+        with open(args.probs) as f:
+            mp_ = json.load(f)
+        if mp_.get("based_on_draw") != int(draw_no[-1]):
+            print(f"WARNING: {args.probs} was built on draw #{mp_.get('based_on_draw')}, "
+                  f"data ends at #{draw_no[-1]}. Re-run deep_ensemble.py.")
+        w = np.asarray(mp_["main"], float)
+        v = np.asarray(mp_["pb"], float)
+        bias["w"], bias["v"] = w / w.sum(), v / v.sum()
+        print(f"\nUsing deep-ensemble probabilities from {args.probs} "
+              f"(main: {mp_.get('main_source')}, PB: {mp_.get('pb_source')}). Max edge: main "
+              f"{(bias['w'].max() * N_MAIN - 1) * 100:+.2f}%, "
+              f"PB {(bias['v'].max() * N_PB - 1) * 100:+.2f}% vs. uniform")
 
     t0 = time.time()
     combos = all_combos()

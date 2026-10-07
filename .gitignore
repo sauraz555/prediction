@@ -1,3 +1,5 @@
 combos_7of35.npy
 top_predictions_draw_*.csv
 __pycache__/
+model_probs_draw_*.json
+ensemble_report_draw_*.json
